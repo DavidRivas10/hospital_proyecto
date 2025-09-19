@@ -1,0 +1,40 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-50: #eef2ff;
+  --color-brand-100: #e0e7ff;
+  --color-brand-600: #4f46e5;
+  --color-brand-700: #4338ca;
+
+  --color-surface: #f7f8fb;
+  --color-elev: #ffffff;
+  --color-foreground: #0f172a;
+  --color-divider: #e5e7eb;
+  --color-muted: #f2f4f7;
+}
+
+:root {
+  color-scheme: light;
+}
+
+html, body, #root { height: 100%; }
+
+.bg-surface { background: var(--color-surface); }
+.bg-elev { background: var(--color-elev); }
+.text-foreground { color: var(--color-foreground); }
+.border-divider { border-color: var(--color-divider); }
+.bg-muted { background: var(--color-muted); }
+
+/* ---- Component layer (no @apply "btn" entre sí para evitar errores) ---- */
+.card { @apply bg-white border border-divider rounded-xl shadow-sm; }
+.card-surface { @apply bg-white border border-divider rounded-xl overflow-hidden; }
+.table { @apply w-full text-sm; }
+.table th { @apply text-left text-foreground/70 font-medium px-3 py-2 border-b border-divider; }
+.table td { @apply px-3 py-2 border-b border-divider; }
+
+.btn-primary { @apply inline-flex items-center gap-2 px-3 py-2 rounded-lg text-white bg-[var(--color-brand-600)] hover:bg-[var(--color-brand-700)] disabled:opacity-60; }
+.btn-ghost { @apply inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-muted hover:bg-muted/80; }
+
+.input { @apply w-full px-3 py-2 rounded-lg border border-divider bg-white focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-600)]/30; }
+/* Suaviza enlaces por defecto para que no se vean morados subrayados */
+a { text-decoration: none; color: inherit; }
