@@ -1,7 +1,7 @@
 // src/api/queue.ts
 import api, { apiPath } from "./http";
 
-// UI en español (como tu schema)
+/** ---------- Tipos ---------- */
 export type TriageCreateInputUI = {
   patientId: string;
   sintomas: string;
@@ -15,6 +15,47 @@ export type TriageCreateInputUI = {
   };
 };
 
+export type Ticket = {
+  id: string;
+  patientId: string;
+  urgencia: number; // 1 = más urgente
+  arrivalSeq: number;
+  sintomas?: string;
+};
+
+/** ---------- Helpers locales para tiempos (guardados en este navegador) ---------- */
+function getTicketTimes(): Record<string, number> {
+  try {
+    return JSON.parse(localStorage.getItem("ticketTimes") || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function setTicketTime(id: string, ts: number) {
+  const map = getTicketTimes();
+  map[id] = ts;
+  localStorage.setItem("ticketTimes", JSON.stringify(map));
+}
+
+/** Hora local a la que se creó el ticket (ms desde epoch) o null */
+export function getLocalCreatedAt(id: string): number | null {
+  const map = getTicketTimes();
+  return typeof map[id] === "number" ? map[id] : null;
+}
+
+/** Elimina el registro local (cuando el ticket es atendido) */
+export function clearLocalCreatedAt(id: string) {
+  const map = getTicketTimes();
+  if (map[id]) {
+    delete map[id];
+    localStorage.setItem("ticketTimes", JSON.stringify(map));
+  }
+}
+
+/** ---------- API ---------- */
+
+/** Crear ticket de triaje */
 export async function triageCreate(input: TriageCreateInputUI) {
   const signosVitales =
     input.signosVitales && Object.keys(input.signosVitales).length
@@ -46,43 +87,50 @@ export async function triageCreate(input: TriageCreateInputUI) {
     signosVitales,
   };
 
-  try {
-    const res = await api.post(apiPath("/triage"), payload);
-    // bandera para que Dashboard refresque
-    sessionStorage.setItem("queue:changed", Date.now().toString());
-    return res.data; // { ticket }
-  } catch (err: any) {
-    console.error(
-      "[triageCreate] payload:",
-      payload,
-      " server says:",
-      err?.response?.data
-    );
+  const res = await api.post(apiPath("/triage"), payload).catch((err) => {
+    console.error("[triageCreate] payload:", payload, " server says:", err?.response?.data);
     throw err;
+  });
+
+  // ⬇️ Guarda hora local de creación para poder calcular espera en el Dashboard
+  if (res?.data?.ticket?.id) {
+    setTicketTime(res.data.ticket.id, Date.now());
   }
+
+  // Señal para refrescar otras vistas
+  sessionStorage.setItem("queue:changed", Date.now().toString());
+
+  return res.data as { ticket: Ticket };
 }
 
-export async function getQueue() {
-  const { data } = await api.get(apiPath("/queue")); // -> /v1/queue
-  return data; // { size, items }
+/** Obtener lista de la cola */
+export async function getQueue(): Promise<{ size: number; items: Ticket[] }> {
+  const { data } = await api.get(apiPath("/queue"));
+  return { size: Number(data?.size ?? 0) || 0, items: Array.isArray(data?.items) ? data.items : [] };
+}
+
+/** Atender el siguiente ticket: devuelve el ticket o null si no hay */
+export async function nextTicket(): Promise<null | Ticket> {
+  const res = await api.post(apiPath("/queue/next")).catch((err) => {
+    // 204 no entra por catch; aquí sólo errores reales
+    throw err;
+  });
+  if (res.status === 204) return null; // sin elementos
+  return (res.data?.ticket as Ticket) ?? null;
 }
 
 /**
- * Métricas mínimas derivadas de GET /v1/queue
- * Backend devuelve { size, items }. No hay "todayCompleted" ni "avgMinutes" aún,
- * así que devolvemos 0 y null respectivamente para no romper la UI.
+ * Métricas mínimas derivadas de GET /v1/queue (placeholder hasta endpoint real)
  */
 export async function getQueueMetrics(): Promise<{
   pendingCount: number;
   todayCompleted: number;
   avgMinutes: number | null;
 }> {
-  const data = await getQueue();
-  const pendingCount = Number(data?.size ?? 0) || 0;
-
+  const { size } = await getQueue();
   return {
-    pendingCount,
-    todayCompleted: 0,  // placeholder hasta que exista endpoint real
-    avgMinutes: null,   // placeholder
+    pendingCount: size,
+    todayCompleted: 0,
+    avgMinutes: null,
   };
 }

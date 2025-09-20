@@ -7,6 +7,7 @@ export type Ticket = {
   sintomas?: string;
   urgencia: number;      // 1 = más urgente
   arrivalSeq: number;    // FIFO dentro de la misma urgencia
+  enqueuedAt: number;    // timestamp ms para métricas
 };
 
 type EnqueueDTO = {
@@ -15,8 +16,18 @@ type EnqueueDTO = {
   urgencia: number;
 };
 
+export type Attended = {
+  id: string;
+  patientId: string;
+  urgencia: number;
+  enqueuedAt: number;
+  attendedAt: number;
+  waitedMs: number;
+};
+
 export class QueueService {
   private items: Ticket[] = [];
+  private attended: Attended[] = [];
   private seq = 0;
 
   /** Número de elementos en cola */
@@ -32,6 +43,7 @@ export class QueueService {
       sintomas: dto.sintomas ?? "",
       urgencia: dto.urgencia,
       arrivalSeq: ++this.seq,
+      enqueuedAt: Date.now(),
     };
     this.items.push(t);
     return t;
@@ -60,6 +72,25 @@ export class QueueService {
     return picked;
   }
 
+  /** Marca un ticket como atendido (lo saca de la cola por id) y lo registra para métricas */
+  attend(id: string): Attended | null {
+    const idx = this.items.findIndex(x => x.id === id);
+    if (idx === -1) return null;
+    const [t] = this.items.splice(idx, 1);
+    const attendedAt = Date.now();
+    const waitedMs = Math.max(0, attendedAt - (t.enqueuedAt ?? attendedAt));
+    const record: Attended = {
+      id: t.id,
+      patientId: t.patientId,
+      urgencia: t.urgencia,
+      enqueuedAt: t.enqueuedAt,
+      attendedAt,
+      waitedMs,
+    };
+    this.attended.push(record);
+    return record;
+  }
+
   /** Reprioriza: mueve el ticket al **final** dentro de su nueva urgencia (respeta FIFO existente) */
   reprioritize(id: string, newUrgency: number): boolean {
     const t = this.items.find(x => x.id === id);
@@ -69,14 +100,11 @@ export class QueueService {
     t.urgencia = newUrgency;
 
     // Los tests esperan que el repriorizado quede DETRÁS de los que ya tenían esa urgencia.
-    // Colocamos su arrivalSeq justo después del máximo actual en esa urgencia.
     const sameUrgency = this.items.filter(x => x.id !== id && x.urgencia === newUrgency);
     if (sameUrgency.length > 0) {
       const maxSeq = Math.max(...sameUrgency.map(x => x.arrivalSeq));
       t.arrivalSeq = maxSeq + 1;
     }
-    // Si no hay nadie con esa urgencia, no tocamos arrivalSeq (sólo resuelve empates dentro de la urgencia).
-
     return true;
   }
 
@@ -88,9 +116,30 @@ export class QueueService {
     });
   }
 
+  /** Métricas de hoy (UTC-agnóstico: usa la fecha local del servidor) */
+  metricsToday() {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const end = start + 24 * 60 * 60 * 1000;
+
+    const today = this.attended.filter(a => a.attendedAt >= start && a.attendedAt < end);
+    const todayCompleted = today.length;
+    const avgMinutes =
+      todayCompleted > 0
+        ? Math.round((today.reduce((sum, a) => sum + a.waitedMs, 0) / todayCompleted) / 60000)
+        : null;
+
+    return {
+      pendingCount: this.size,
+      todayCompleted,
+      avgMinutes,
+    };
+  }
+
   /** Vacía la cola (para tests) */
   reset() {
     this.items = [];
+    this.attended = [];
     this.seq = 0;
   }
 
@@ -98,6 +147,5 @@ export class QueueService {
   private better(a: Ticket, b: Ticket): boolean {
     if (a.urgencia !== b.urgencia) return a.urgencia < b.urgencia;
     return a.arrivalSeq < b.arrivalSeq;
-    // (menor urgencia = más prioridad; empate -> menor arrivalSeq = más antiguo)
   }
 }

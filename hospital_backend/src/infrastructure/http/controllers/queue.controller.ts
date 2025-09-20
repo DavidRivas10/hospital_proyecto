@@ -1,15 +1,10 @@
 import { Router } from "express";
-// 👇 IMPORTA el servicio donde realmente vive
 import { QueueService } from "../../../domain/services/queue/queue.service.js";
 
 export const queueRouter = Router();
-
-// ⚠️ Asegúrate de tener una instancia única aquí (la que usan las rutas)
 const queue = new QueueService();
 
-/* ...tus rutas tal cual ya las tienes... */
-
-// 👉 añade (o deja) estas endpoints tal como ya las tenías:
+/* Rutas existentes */
 queueRouter.post("/triage", (req, res) => {
   const { patientId, sintomas, urgencia } = req.body ?? {};
   if (!patientId || !urgencia) return res.status(400).json({ error: "patientId y urgencia son requeridos" });
@@ -36,6 +31,19 @@ queueRouter.patch("/queue/:id/urgency", (req, res) => {
   res.json({ ok: true });
 });
 
+/* NUEVO: marcar ticket como atendido */
+queueRouter.post("/queue/:id/attend", (req, res) => {
+  const { id } = req.params;
+  const rec = queue.attend(id);
+  if (!rec) return res.sendStatus(404);
+  res.json({ attended: rec });
+});
+
+/* NUEVO: métricas para Dashboard */
+queueRouter.get("/queue/metrics", (_req, res) => {
+  res.json(queue.metricsToday());
+});
+
 // Solo para tests
 if (process.env.NODE_ENV === "test") {
   queueRouter.post("/__test__/reset", (_req, res) => {
@@ -44,15 +52,15 @@ if (process.env.NODE_ENV === "test") {
   });
 }
 
-/* 👇👇 AÑADE ESTE EXPORT para que metrics.ts deje de fallar */
+/* Export para otros módulos (metrics, etc.) */
 export const queueMetrics = {
-  /** tamaño actual de la cola */
   get size() {
     return queue.size;
   },
-  /** snapshot ordenado (p/ depuración o métricas) */
   snapshot() {
     return queue.snapshot();
   },
+  metricsToday() {
+    return queue.metricsToday();
+  },
 };
-  
