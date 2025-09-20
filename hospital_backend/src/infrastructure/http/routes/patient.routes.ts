@@ -5,7 +5,8 @@ import { patientCreateSchema, patientUpdateSchema } from "../dto/patient.dto.js"
 
 export const patientRouter = Router();
 
-patientRouter.post("/patients", validateBody(patientCreateSchema), patientController.create);
-patientRouter.get("/patients/:id", patientController.getById);
-patientRouter.get("/patients", patientController.searchByName);
-patientRouter.patch("/patients/:id", validateBody(patientUpdateSchema), patientController.update);
+// OJO: aquí van rutas RELATIVAS porque el v1.ts ya hace v1.use("/patients", patientRouter)
+patientRouter.post("/", validateBody(patientCreateSchema), patientController.create);
+patientRouter.get("/:id", patientController.getById);
+patientRouter.get("/", patientController.searchByName);
+patientRouter.patch("/:id", validateBody(patientUpdateSchema), patientController.update);

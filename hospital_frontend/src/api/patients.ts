@@ -1,4 +1,4 @@
-import { client } from "./client";
+import api, { apiPath } from "./http";
 
 export type Patient = {
   _id?: string;
@@ -24,29 +24,38 @@ function toArray(v: unknown): string[] | undefined {
 }
 
 export async function listPatients(): Promise<Patient[]> {
-  const { data } = await client.get("/v1/patients");
-  return Array.isArray(data) ? data : data?.items ?? [];
+  // ✅ apiPath resuelve el prefijo /v1 (evita /v1/v1)
+  const { data } = await api.get(apiPath("/patients"));
+  // tolerante a distintas formas de payload
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.items)) return data.items;
+  if (Array.isArray(data?.patients)) return data.patients;
+  return [];
 }
 
 export async function createPatient(input: Patient): Promise<Patient> {
-  // CONTRATO EN ESPAÑOL que definiste
+  // Limpieza mínima para cumplir con el schema del backend
+  const phoneDigits = (input.phone ?? "").replace(/\D/g, ""); // solo dígitos
   const payload = {
-    docId: input.docId?.trim() || undefined, // NO enviar "id"; tu backend espera docId
+    docId: input.docId?.trim() || undefined,
     fullName: input.fullName?.trim(),
     birthDate: input.birthDate || undefined,
     sex: (input.sex as any) ?? "O",
-    phone: input.phone || undefined,
-    email: input.email || undefined,
-    address: input.address || undefined,
-    allergies: toArray(input.allergies) ?? [],            // arrays
+    phone: phoneDigits ? phoneDigits : undefined,        // ⬅️ solo dígitos o undefined
+    email: input.email?.trim() || undefined,
+    address: input.address?.trim() || undefined,
+    allergies: toArray(input.allergies) ?? [],
     chronicConditions: toArray(input.chronicConditions) ?? [],
   };
 
   if (!payload.fullName) throw new Error("FULLNAME_REQUIRED");
 
-  const res = await client.post("/v1/patients", payload).catch((err) => {
+  const res = await api.post(apiPath("/patients"), payload).catch((err) => {
     console.log("[createPatient] 400 payload:", payload, " server says:", err?.response?.data);
     throw err;
   });
-  return res.data;
+
+  // tu backend responde { patient: {...} }
+  return res.data?.patient ?? res.data;
 }
+

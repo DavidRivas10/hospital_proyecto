@@ -1,4 +1,3 @@
-// src/infrastructure/ws/socket.ts
 import type { Server as HttpServer } from "http";
 import { Server } from "socket.io";
 
@@ -21,3 +20,8 @@ export function wsEmit(event: string, payload: any) {
   if (!io) return;
   io.emit(event, payload);
 }
+
+export function getIO() {
+  return io;
+}
+

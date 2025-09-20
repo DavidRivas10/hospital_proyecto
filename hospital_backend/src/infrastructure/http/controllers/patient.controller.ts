@@ -1,6 +1,8 @@
 import type { Request, Response } from "express";
 import { PatientRepo } from "../../persistence/mongoose/repositories/patient.repo.js";
 import type { PatientCreateDTO, PatientUpdateDTO } from "../dto/patient.dto.js";
+import { HistoryModel } from "../../persistence/mongoose/models/history.model.js";
+import { wsEmit } from "../../ws/socket.js";
 
 const isTest = process.env.NODE_ENV === "test";
 
@@ -20,9 +22,17 @@ export const patientController = {
       email: dto.email,
       address: dto.address,
       allergies: dto.allergies ?? [],
-        chronicConditions: dto.chronicConditions ?? [],
-
+      chronicConditions: dto.chronicConditions ?? [],
     });
+
+    // Registrar en historial (visible)
+    await HistoryModel.create({
+      type: "PATIENT_CREATED",
+      at: new Date(),
+      // puedes incluir datos mínimos del paciente si quieres en un subdoc 'patient'
+      hidden: false,
+    });
+    wsEmit("history:new", { type: "PATIENT_CREATED", patientId: String(created._id) });
 
     return res.status(201).json({ patient: { ...created, _id: String(created._id) } });
   },
@@ -57,12 +67,11 @@ export const patientController = {
       phone: dto.phone,
       email: dto.email,
       address: dto.address,
-      allergies: dto.allergies ?? undefined,          // 👈 asegura opcional
-      chronicConditions: dto.chronicConditions ?? undefined, // 👈 asegura opcional
+      allergies: dto.allergies ?? undefined,
+      chronicConditions: dto.chronicConditions ?? undefined,
     });
 
     if (!ok) return res.status(404).json({ error: { code: "NOT_FOUND" } });
     return res.json({ ok: true });
   },
 };
-
