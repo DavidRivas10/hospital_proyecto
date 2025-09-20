@@ -1,25 +1,22 @@
 import { useEffect, useState } from "react";
-import type { Patient } from "../types/patient";
+import { TextInput, Select, Textarea, Button, Group, Grid, Card, Text, Divider } from "@mantine/core";
 
 export type PatientFormValues = {
-  docId: string;
   fullName: string;
-  birthDate?: string; // yyyy-mm-dd (input date)
+  birthDate?: string;
   sex?: "M" | "F" | "O";
   phone?: string;
   email?: string;
   address?: string;
   allergies?: string[];
   chronicConditions?: string[];
+  symptoms?: string;
+  urgency?: number; // 1..5
 };
 
 function isoToYmd(iso?: string): string {
   if (!iso) return "";
-  try {
-    return new Date(iso).toISOString().slice(0, 10);
-  } catch {
-    return "";
-  }
+  try { return new Date(iso).toISOString().slice(0, 10); } catch { return ""; }
 }
 
 export default function PatientForm({
@@ -28,13 +25,12 @@ export default function PatientForm({
   onCancel,
   submitting,
 }: {
-  initial?: Patient | null;
+  initial?: any;
   submitting?: boolean;
   onSubmit: (v: PatientFormValues) => void;
   onCancel?: () => void;
 }) {
   const [values, setValues] = useState<PatientFormValues>({
-    docId: "",
     fullName: "",
     birthDate: "",
     sex: "O",
@@ -43,6 +39,8 @@ export default function PatientForm({
     address: "",
     allergies: [],
     chronicConditions: [],
+    symptoms: "",
+    urgency: 3,
   });
 
   const [allergyText, setAllergyText] = useState("");
@@ -50,8 +48,8 @@ export default function PatientForm({
 
   useEffect(() => {
     if (initial) {
-      setValues({
-        docId: initial.docId ?? "",
+      setValues((v) => ({
+        ...v,
         fullName: initial.fullName ?? "",
         birthDate: isoToYmd(initial.birthDate),
         sex: (initial.sex as any) ?? "O",
@@ -60,27 +58,26 @@ export default function PatientForm({
         address: initial.address ?? "",
         allergies: initial.allergies ?? [],
         chronicConditions: initial.chronicConditions ?? [],
-      });
+        symptoms: initial.symptoms ?? "",
+        urgency: initial.urgency ?? 3,
+      }));
       setAllergyText((initial.allergies ?? []).join(", "));
       setChronicText((initial.chronicConditions ?? []).join(", "));
     }
   }, [initial]);
 
-  function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
-    const { name, value } = e.target;
+  // ✅ handler tolerante (evita "currentTarget is null")
+  function handleChange(e: any) {
+    const name = e?.target?.name ?? e?.currentTarget?.name;
+    const value = e?.target?.value ?? e?.currentTarget?.value ?? "";
+    if (!name) return;
     setValues((v) => ({ ...v, [name]: value }));
   }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const allergies = allergyText
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
-    const chronicConditions = chronicText
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
+    const allergies = allergyText.split(",").map(s => s.trim()).filter(Boolean);
+    const chronicConditions = chronicText.split(",").map(s => s.trim()).filter(Boolean);
 
     onSubmit({
       ...values,
@@ -91,149 +88,156 @@ export default function PatientForm({
       phone: values.phone || undefined,
       email: values.email || undefined,
       address: values.address || undefined,
+      urgency: Number(values.urgency) as any,
     });
   }
 
-  // ---- estilos mínimos para buena presentación (sin Mantine) ----
-  const fieldWrap: React.CSSProperties = { display: "block" };
-  const labelStyle: React.CSSProperties = { display: "block", marginBottom: 4, fontWeight: 500 };
-  const controlStyle: React.CSSProperties = {
-    width: "100%",
-    minWidth: 0,
-    padding: "8px 10px",
-    borderRadius: 6,
-    border: "1px solid var(--mantine-color-gray-4, #dcdcdc)",
-    outline: "none",
-  };
-
-  // límite para evitar fechas futuras (coincide con la validación del backend)
   const todayYmd = new Date().toISOString().slice(0, 10);
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      style={{ display: "grid", gap: 12, width: "100%", minWidth: 0 }}
-    >
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <div style={fieldWrap}>
-          <label style={labelStyle}>Documento</label>
-          <input
-            name="docId"
-            value={values.docId}
-            onChange={handleChange}
-            required
-            minLength={3}                 // evita docId demasiado corto
-            style={controlStyle}
-          />
-        </div>
-        <div style={fieldWrap}>
-          <label style={labelStyle}>Nombre completo</label>
-          <input
-            name="fullName"
-            value={values.fullName}
-            onChange={handleChange}
-            required
-            style={controlStyle}
-          />
-        </div>
-      </div>
+    <Card withBorder radius="md" p="lg" shadow="sm">
+      <Text fw={600} mb="xs">Nuevo paciente</Text>
+      <Text c="dimmed" size="sm" mb="md">
+        Completa los datos del paciente y una breve descripción de los síntomas.
+      </Text>
+      <Divider mb="md" />
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
-        <div style={fieldWrap}>
-          <label style={labelStyle}>Fecha de nacimiento</label>
-          <input
-            type="date"
-            name="birthDate"
-            value={values.birthDate ?? ""}
-            onChange={handleChange}
-            max={todayYmd}               // no permitir fechas futuras
-            style={controlStyle}
-          />
-        </div>
-        <div style={fieldWrap}>
-          <label style={labelStyle}>Sexo</label>
-          <select
-            name="sex"
-            value={values.sex ?? "O"}
-            onChange={handleChange}
-            style={controlStyle}
-          >
-            <option value="M">M</option>
-            <option value="F">F</option>
-            <option value="O">O</option>
-          </select>
-        </div>
-        <div style={fieldWrap}>
-          <label style={labelStyle}>Teléfono</label>
-          <input
-            name="phone"
-            value={values.phone ?? ""}
-            onChange={handleChange}
-            pattern="^\d{9,15}$"        // 9 a 15 dígitos
-            title="Ingresa entre 9 y 15 dígitos (solo números)"
-            style={controlStyle}
-          />
-        </div>
-      </div>
+      <form onSubmit={handleSubmit}>
+        <Grid gutter="md">
+          {/* Identificación */}
+          <Grid.Col span={{ base: 12, md: 6 }}>
+            <TextInput
+              label="Nombre completo"
+              name="fullName"
+              value={values.fullName}
+              onChange={handleChange}
+              required
+              placeholder="Ej: Ana Pérez"
+            />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, md: 6 }}>
+            <TextInput
+              label="Teléfono"
+              name="phone"
+              value={values.phone ?? ""}
+              onChange={handleChange}
+              placeholder="Ej: 96806012"
+              pattern="^[0-9]{8}$"
+              title="Ingresa exactamente 8 dígitos"
+            />
+          </Grid.Col>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <div style={fieldWrap}>
-          <label style={labelStyle}>Email</label>
-          <input
-            type="email"
-            name="email"
-            value={values.email ?? ""}
-            onChange={handleChange}
-            style={controlStyle}
-          />
-        </div>
-        <div style={fieldWrap}>
-          <label style={labelStyle}>Dirección</label>
-          <input
-            name="address"
-            value={values.address ?? ""}
-            onChange={handleChange}
-            style={controlStyle}
-          />
-        </div>
-      </div>
+          {/* Datos demográficos */}
+          <Grid.Col span={{ base: 12, md: 4 }}>
+            <TextInput
+              type="date"
+              label="Fecha de nacimiento"
+              name="birthDate"
+              value={values.birthDate ?? ""}
+              onChange={handleChange}
+              max={todayYmd}
+            />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, md: 4 }}>
+            <Select
+              label="Sexo"
+              value={values.sex ?? "O"}
+              onChange={(v) => setValues((s) => ({ ...s, sex: (v as any) ?? "O" }))}
+              data={[
+                { value: "M", label: "M" },
+                { value: "F", label: "F" },
+                { value: "O", label: "O" },
+              ]}
+              placeholder="Selecciona"
+            />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, md: 4 }}>
+            <TextInput
+              label="Email"
+              type="email"
+              name="email"
+              value={values.email ?? ""}
+              onChange={handleChange}
+              placeholder="correo@dominio.com"
+            />
+          </Grid.Col>
 
-      <div style={fieldWrap}>
-        <label style={labelStyle}>Alergias (separadas por coma)</label>
-        <input
-          value={allergyText}
-          onChange={(e) => setAllergyText(e.target.value)}
-          placeholder="penicilina, polen"
-          style={controlStyle}
-        />
-      </div>
+          <Grid.Col span={12}>
+            <TextInput
+              label="Dirección"
+              name="address"
+              value={values.address ?? ""}
+              onChange={handleChange}
+              placeholder="Calle, número, ciudad"
+            />
+          </Grid.Col>
 
-      <div style={fieldWrap}>
-        <label style={labelStyle}>Condiciones crónicas (separadas por coma)</label>
-        <input
-          value={chronicText}
-          onChange={(e) => setChronicText(e.target.value)}
-          placeholder="asma, hipertensión"
-          style={controlStyle}
-        />
-      </div>
+          {/* Salud */}
+          <Grid.Col span={{ base: 12, md: 6 }}>
+            <Textarea
+              label="Alergias (separadas por coma)"
+              value={allergyText}
+              onChange={(e) => setAllergyText((e.target as HTMLTextAreaElement).value)}
+              placeholder="penicilina, polen"
+              autosize
+              minRows={1}
+            />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, md: 6 }}>
+            <Textarea
+              label="Condiciones crónicas (separadas por coma)"
+              value={chronicText}
+              onChange={(e) => setChronicText((e.target as HTMLTextAreaElement).value)}
+              placeholder="asma, hipertensión"
+              autosize
+              minRows={1}
+            />
+          </Grid.Col>
 
-      <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-        <button type="submit" disabled={submitting} style={{ ...controlStyle, width: "auto", cursor: "pointer" }}>
-          {submitting ? "Guardando..." : "Guardar"}
-        </button>
-        {onCancel && (
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={submitting}
-            style={{ ...controlStyle, width: "auto", cursor: "pointer" }}
-          >
-            Cancelar
-          </button>
-        )}
-      </div>
-    </form>
+          {/* Motivo de consulta */}
+          <Grid.Col span={{ base: 12, md: 8 }}>
+            <Textarea
+              label="Síntomas"
+              name="symptoms"
+              value={values.symptoms ?? ""}
+              onChange={(e) =>
+                setValues((s) => ({ ...s, symptoms: (e.target as HTMLTextAreaElement).value }))
+              }
+              placeholder="Describa brevemente los síntomas"
+              autosize
+              minRows={2}
+            />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, md: 4 }}>
+            <Select
+              label="Urgencia"
+              value={String(values.urgency ?? 3)}
+              onChange={(v) => setValues((s) => ({ ...s, urgency: v ? Number(v) : 3 }))}
+              data={[
+                { value: "1", label: "1 (crítica)" },
+                { value: "2", label: "2" },
+                { value: "3", label: "3" },
+                { value: "4", label: "4" },
+                { value: "5", label: "5 (baja)" },
+              ]}
+              placeholder="Selecciona"
+            />
+          </Grid.Col>
+
+          <Grid.Col span={12}>
+            <Group justify="flex-start" gap="sm" mt="xs">
+              <Button type="submit" loading={submitting}>
+                Guardar
+              </Button>
+              {onCancel && (
+                <Button variant="light" onClick={onCancel} disabled={submitting}>
+                  Cancelar
+                </Button>
+              )}
+            </Group>
+          </Grid.Col>
+        </Grid>
+      </form>
+    </Card>
   );
 }
-

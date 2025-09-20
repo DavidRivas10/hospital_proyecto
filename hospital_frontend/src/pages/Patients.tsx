@@ -1,52 +1,100 @@
+// src/pages/Patients.tsx
 import { useEffect, useState } from "react";
 import AppShell from "../components/AppShell";
-import { Title, Grid, Paper, Button, Text, Accordion, Group, Badge } from "@mantine/core";
+import {
+  Title,
+  Paper,
+  Button,
+  Text,
+  Group,
+  Badge,
+  Table,
+  Stack,
+} from "@mantine/core";
 import PatientForm, { type PatientFormValues } from "../components/PatientForm";
-import { createPatient, listPatients, type Patient } from "../api/patients";
 import { triageCreate, attendTicket } from "../api/queue";
 
-type PatientRow = Patient & { activeTicketId?: string; activeUrgency?: number };
+type PatientRow = {
+  id: string;            // id local (no backend)
+  fullName: string;
+  birthDate?: string;
+  sex?: "M" | "F" | "O";
+  phone?: string;
+  email?: string;
+  address?: string;
+  allergies?: string[];
+  chronicConditions?: string[];
+  activeTicketId?: string;
+  activeUrgency?: number;
+};
+
+function genPatientId() {
+  return `H-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+}
 
 export default function PatientsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [items, setItems] = useState<PatientRow[]>([]);
 
-  async function load() {
-    const list = await listPatients();
-    // si luego expones ticket activo del paciente desde backend, mapeas aquí
-    setItems(list as PatientRow[]);
-  }
-
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    setItems([]);
+  }, []);
 
   async function handleCreate(v: PatientFormValues) {
     try {
       setSubmitting(true);
-      await createPatient(v as any);
-      await load();
+
+      const id = genPatientId();
+      const patient: PatientRow = {
+        id,
+        fullName: v.fullName,
+        birthDate: v.birthDate,
+        sex: (v.sex as any) ?? "O",
+        phone: v.phone,
+        email: v.email,
+        address: v.address,
+        allergies: v.allergies ?? [],
+        chronicConditions: v.chronicConditions ?? [],
+      };
+
+      const urg = v.urgency ?? 3;
+      const r = await triageCreate({
+        patientId: id,
+        sintomas: v.symptoms ?? "",
+        urgencia: urg,
+      });
+
+      setItems((prev) => [
+        {
+          ...patient,
+          activeTicketId: r.ticket.id,
+          activeUrgency: r.ticket.urgencia,
+        },
+        ...prev,
+      ]);
+    } catch (err: any) {
+      const server = err?.response?.data?.error;
+      const msg =
+        server?.message ||
+        server?.code ||
+        (Array.isArray(server?.issues) && server.issues.length
+          ? server.issues[0].message || JSON.stringify(server.issues[0])
+          : "") ||
+        err?.message ||
+        "ERROR";
+      console.log("[Patients] create error detail:", server);
+      alert(`No se pudo registrar: ${msg}`);
     } finally {
       setSubmitting(false);
     }
-  }
-
-  async function handleCreateTicket(p: PatientRow) {
-    const r = await triageCreate({ patientId: p._id || p.id!, sintomas: "", urgencia: 3 });
-    // guardamos “activo” localmente para mostrar botón de alta
-    setItems((prev) =>
-      prev.map(it =>
-        it._id === p._id
-          ? { ...it, activeTicketId: r.ticket.id, activeUrgency: r.ticket.urgencia }
-          : it
-      )
-    );
   }
 
   async function handleAttend(p: PatientRow) {
     if (!p.activeTicketId) return;
     await attendTicket(p.activeTicketId);
     setItems((prev) =>
-      prev.map(it =>
-        it._id === p._id
+      prev.map((it) =>
+        it.id === p.id
           ? { ...it, activeTicketId: undefined, activeUrgency: undefined }
           : it
       )
@@ -56,63 +104,72 @@ export default function PatientsPage() {
   return (
     <AppShell>
       <Title order={2} mb="md">Pacientes</Title>
-      <Grid>
-        <Grid.Col span={{ base: 12, md: 5 }}>
-          <Paper withBorder p="md">
-            <Text c="dimmed" size="sm" mb="xs">Nuevo paciente</Text>
-            <PatientForm onSubmit={handleCreate} submitting={submitting} />
-          </Paper>
-        </Grid.Col>
 
-        <Grid.Col span={{ base: 12, md: 7 }}>
-          <Paper withBorder p="md">
-            <Text c="dimmed" size="sm" mb="sm">Listado</Text>
+      <Stack gap="md">
+        <Paper withBorder p="md" radius="md" shadow="xs">
+          <Text c="dimmed" size="sm" mb="xs">Nuevo paciente</Text>
+          <PatientForm onSubmit={handleCreate} submitting={submitting} />
+        </Paper>
 
-            <Accordion multiple>
-              {items.map((p) => (
-                <Accordion.Item key={p._id || p.id} value={String(p._id || p.id)}>
-                  <Accordion.Control>
-                    <Group justify="space-between" w="100%">
+        <Paper withBorder p="md" radius="md" shadow="xs">
+          <Group justify="space-between" mb="sm">
+            <Text c="dimmed" size="sm">Listado</Text>
+            <Badge variant="light">
+              {items.length} {items.length === 1 ? "paciente" : "pacientes"}
+            </Badge>
+          </Group>
+
+          {items.length === 0 ? (
+            <Text c="dimmed">Sin pacientes aún</Text>
+          ) : (
+            <Table striped highlightOnHover verticalSpacing="xs">
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>Nombre</Table.Th>
+                  <Table.Th>Contacto</Table.Th>
+                  <Table.Th>Datos</Table.Th>
+                  <Table.Th>Estado</Table.Th>
+                  <Table.Th style={{ width: 140 }}>Acción</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {items.map((p) => (
+                  <Table.Tr key={p.id}>
+                    <Table.Td>
                       <Text fw={600}>{p.fullName}</Text>
-                      <Group gap="xs">
-                        {typeof p.activeUrgency === "number" && (
-                          <Badge variant="light">Urgencia {p.activeUrgency}</Badge>
-                        )}
-                        {p.activeTicketId ? (
-                          <Button
-                            size="xs"
-                            variant="light"
-                            onClick={(e) => { e.stopPropagation(); handleAttend(p); }}
-                          >
-                            Dar de alta
-                          </Button>
-                        ) : (
-                          <Button
-                            size="xs"
-                            onClick={(e) => { e.stopPropagation(); handleCreateTicket(p); }}
-                          >
-                            Crear ticket
-                          </Button>
-                        )}
-                      </Group>
-                    </Group>
-                  </Accordion.Control>
-                  <Accordion.Panel>
-                    <Text size="sm"><b>Documento:</b> {p.docId || "—"}</Text>
-                    <Text size="sm"><b>Nacimiento:</b> {p.birthDate || "—"}</Text>
-                    <Text size="sm"><b>Sexo:</b> {p.sex || "—"}</Text>
-                    <Text size="sm"><b>Teléfono:</b> {p.phone || "—"}</Text>
-                    <Text size="sm"><b>Email:</b> {p.email || "—"}</Text>
-                    <Text size="sm"><b>Dirección:</b> {p.address || "—"}</Text>
-                    <Text size="sm"><b>Alergias:</b> {(p.allergies || []).join(", ") || "—"}</Text>
-                    <Text size="sm"><b>Cond. crónicas:</b> {(p.chronicConditions || []).join(", ") || "—"}</Text>
-                  </Accordion.Panel>
-                </Accordion.Item>
-              ))}
-            </Accordion>
-          </Paper>
-        </Grid.Col>
-      </Grid>
+                      <Text size="sm" c="dimmed">ID: {p.id}</Text>
+                    </Table.Td>
+                    <Table.Td>
+                      <Text size="sm">{p.phone || "—"}</Text>
+                      <Text size="sm" c="dimmed">{p.email || "—"}</Text>
+                    </Table.Td>
+                    <Table.Td>
+                      <Text size="sm"><b>Nac.:</b> {p.birthDate || "—"}</Text>
+                      <Text size="sm"><b>Sexo:</b> {p.sex || "—"}</Text>
+                    </Table.Td>
+                    <Table.Td>
+                      {p.activeTicketId ? (
+                        <Badge variant="light">Urgencia {p.activeUrgency}</Badge>
+                      ) : (
+                        <Badge variant="light" color="gray">Sin ticket</Badge>
+                      )}
+                    </Table.Td>
+                    <Table.Td>
+                      {p.activeTicketId ? (
+                        <Button size="xs" variant="light" onClick={() => handleAttend(p)}>
+                          Dar de alta
+                        </Button>
+                      ) : (
+                        <Text size="sm" c="dimmed">—</Text>
+                      )}
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          )}
+        </Paper>
+      </Stack>
     </AppShell>
   );
 }

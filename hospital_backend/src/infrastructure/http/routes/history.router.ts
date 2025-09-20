@@ -19,3 +19,13 @@ historyRouter.get("/", async (req, res, next) => {
     next(e);
   }
 });
+
+// ⬇️ NUEVO: resetear historial
+historyRouter.post("/reset", async (req, res, next) => {
+  try {
+    await HistoryModel.deleteMany({});
+    res.json({ ok: true });
+  } catch (e) {
+    next(e);
+  }
+});
