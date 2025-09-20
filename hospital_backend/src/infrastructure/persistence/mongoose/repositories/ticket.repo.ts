@@ -1,4 +1,4 @@
-import { Ticket, type TicketDoc } from "../models/ticket.model.js";
+import { TicketModel as Ticket, type TicketDoc } from "../models/ticket.model.js";
 
 export type CreateTicketInput = Omit<TicketDoc, "_id" | "createdAt" | "updatedAt">;
 

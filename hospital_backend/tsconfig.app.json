@@ -11,7 +11,7 @@
     "skipLibCheck": true,
     "sourceMap": true,
     "resolveJsonModule": true,
-    "types": ["node", "vitest"],
+    "types": ["node", "vitest"]
   },
   "include": ["src", "tests"],
   "exclude": ["node_modules", "dist"]

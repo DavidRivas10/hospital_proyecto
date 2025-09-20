@@ -1,4 +1,5 @@
-import { api } from "./client";
+// src/api/history.ts
+import { api as client} from "./client";
 
 export type HistoryItem = {
   id: string;
@@ -14,14 +15,20 @@ export type HistoryItem = {
 };
 
 // Soporta getHistory(500) y getHistory({ limit: 500 })
-export async function getHistory(limitOrOpts?: number | { limit?: number }): Promise<HistoryItem[]> {
-  const limit = typeof limitOrOpts === "number" ? limitOrOpts : (limitOrOpts?.limit ?? 500);
+export async function getHistory(
+  limitOrOpts?: number | { limit?: number }
+): Promise<HistoryItem[]> {
+  const limit =
+    typeof limitOrOpts === "number" ? limitOrOpts : limitOrOpts?.limit ?? 500;
+
   try {
-    const { data } = await api.get(`/v1/history?limit=${limit}`);
+    // Base URL sin /v1 -> aquí sí incluimos /v1
+const { data } = await client.get("/history", { params: { limit } });
     return Array.isArray(data) ? data : data?.items ?? [];
   } catch (err: any) {
-    // Si no existe ese endpoint aún, no rompas la UI
-    if (err?.response?.status === 404) return [];
+    if (err?.response?.status === 404) return []; // no rompas la UI si aún no existe
     throw err;
   }
 }
+
+

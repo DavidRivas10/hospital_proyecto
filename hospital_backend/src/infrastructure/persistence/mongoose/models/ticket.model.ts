@@ -1,28 +1,40 @@
-import mongoose, { Schema, type InferSchemaType, type Model } from "mongoose";
+import mongoose, { Schema, type Model, type InferSchemaType } from "mongoose";
+
+export const ESTADOS = ["waiting", "in_service", "done"] as const;
+export type Estado = typeof ESTADOS[number];
 
 const TicketSchema = new Schema(
   {
-    patientId: { type: String, required: true, index: true },
-    sintomas: { type: String, required: true },
+    patientId: { type: String, required: true },
+    urgencia: { type: Number, required: true, min: 1, max: 3 },
+    sintomas: { type: String },
     signosVitales: {
-      FC: { type: Number },
-      FR: { type: Number },
-      TA: { type: String },
-      Temp: { type: Number },
-      SpO2: { type: Number },
+      FC: String,
+      FR: String,
+      TA: String,
+      Temp: String,
+      SpO2: String,
     },
-    urgencia: { type: Number, enum: [1, 2, 3], required: true, index: true },
-    llegadaAt: { type: Date, required: true, index: true },
-    arrivalSeq: { type: Number, required: true, index: true },
-    estado: { type: String, enum: ["waiting", "in_service", "done"], required: true, index: true },
-    startedAt: { type: Date },   // cuándo pasó a in_service
-    finishedAt: { type: Date },  // cuándo se completó (done)
+
+    // campos de control de cola
+    estado: { type: String, enum: ESTADOS, default: "waiting", index: true },
+    arrivalSeq: { type: Number, index: true }, // para FIFO
+    number: { type: Number, index: true },     // correlativo visible
+
+    startedAt: { type: Date, default: null },
+    finishedAt: { type: Date, default: null },
   },
-  { timestamps: true, versionKey: false, collection: "tickets" }
+  { timestamps: true }
 );
 
-export type TicketDoc = InferSchemaType<typeof TicketSchema> & { _id: mongoose.Types.ObjectId };
-export type TicketModel = Model<TicketDoc>;
+export type TicketDoc = InferSchemaType<typeof TicketSchema> & {
+  _id: mongoose.Types.ObjectId;
+  createdAt: Date;
+  updatedAt: Date;
+};
 
-export const Ticket: TicketModel =
+export const TicketModel: Model<TicketDoc> =
   mongoose.models.Ticket || mongoose.model<TicketDoc>("Ticket", TicketSchema);
+
+// opcional: alias para evitar tocar imports antiguos
+export { TicketModel as Ticket };

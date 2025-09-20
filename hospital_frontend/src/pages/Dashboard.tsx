@@ -1,3 +1,4 @@
+// src/pages/Dashboard.tsx
 import { useEffect, useState } from "react";
 import AppShell from "../components/AppShell";
 import PageHeader, { AppBreadcrumbs } from "../components/PageHeader";
