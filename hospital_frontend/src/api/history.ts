@@ -1,5 +1,5 @@
 // src/api/history.ts
-import { api as client} from "./client";
+import { client} from "./client";
 
 export type HistoryItem = {
   id: string;

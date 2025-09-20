@@ -2,6 +2,7 @@
   "dependencies": {
     "clsx": "^2.1.1",
     "lucide-react": "^0.544.0",
-    "react-router-dom": "^7.9.1"
+    "react-router-dom": "^7.9.1",
+    "socket.io": "^4.8.1"
   }
 }

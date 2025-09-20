@@ -1,78 +1,103 @@
-import { PriorityMinHeapImpl, type PriorityKey } from "../../datastructures/priority-heap/index.js";
-import type { TriageTicket, Urgencia } from "../../models/ticket.js";
+// src/domain/services/queue/queue.service.ts
+import { randomUUID } from "node:crypto";
+
+export type Ticket = {
+  id: string;
+  patientId: string;
+  sintomas?: string;
+  urgencia: number;      // 1 = más urgente
+  arrivalSeq: number;    // FIFO dentro de la misma urgencia
+};
+
+type EnqueueDTO = {
+  patientId: string;
+  sintomas?: string;
+  urgencia: number;
+};
 
 export class QueueService {
-  private heap = new PriorityMinHeapImpl<TriageTicket>();
-  private arrivalSeqCounter = 0;
+  private items: Ticket[] = [];
+  private seq = 0;
 
-  get size() { return this.heap.size(); }
-
-  // Sembrar tickets waiting en memoria al arrancar (desde DB)
-  seed(items: TriageTicket[]): void {
-    this.heap = new PriorityMinHeapImpl<TriageTicket>();
-    let maxSeq = 0;
-    for (const t of items) {
-      const key: PriorityKey = { urgency: t.urgencia as 1 | 2 | 3, arrivalSeq: t.arrivalSeq };
-      this.heap.insert({ key, value: t });
-      if (t.arrivalSeq > maxSeq) maxSeq = t.arrivalSeq;
-    }
-    this.arrivalSeqCounter = maxSeq;
+  /** Número de elementos en cola */
+  get size() {
+    return this.items.length;
   }
 
-  // Wrapper para tests / uso en memoria (genera un ID efímero)
-  enqueue(input: Omit<TriageTicket, "id" | "arrivalSeq" | "llegadaAt" | "estado"> & { urgencia: Urgencia }): TriageTicket {
-    const id = `mem-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-    return this.enqueueWithId(id, input);
-  }
-
-  // Para crear tickets desde API con ID externo (Mongo _id)
-  enqueueWithId(id: string, input: Omit<TriageTicket, "id" | "arrivalSeq" | "llegadaAt" | "estado"> & { urgencia: Urgencia }): TriageTicket {
-    const ticket: TriageTicket = {
-      id,
-      patientId: input.patientId,
-      sintomas: input.sintomas,
-      signosVitales: input.signosVitales,
-      urgencia: input.urgencia,
-      llegadaAt: new Date().toISOString(),
-      arrivalSeq: ++this.arrivalSeqCounter,
-      estado: "waiting",
+  /** Inserta y devuelve el ticket creado */
+  enqueue(dto: EnqueueDTO): Ticket {
+    const t: Ticket = {
+      id: randomUUID(),
+      patientId: dto.patientId,
+      sintomas: dto.sintomas ?? "",
+      urgencia: dto.urgencia,
+      arrivalSeq: ++this.seq,
     };
-    const key: PriorityKey = { urgency: ticket.urgencia as 1 | 2 | 3, arrivalSeq: ticket.arrivalSeq };
-    this.heap.insert({ key, value: ticket });
-    return ticket;
-  }
-
-  peek(): TriageTicket | undefined {
-    return this.heap.peek()?.value;
-  }
-
-  next(): TriageTicket | undefined {
-    const min = this.heap.extractMin();
-    if (!min) return undefined;
-    const t = { ...min.value, estado: "in_service" as const };
+    this.items.push(t);
     return t;
   }
 
-  reprioritize(ticketId: string, nueva: Urgencia): boolean {
-    const newSeq = ++this.arrivalSeqCounter;
-    return this.heap.updateKey(
-      (t) => t.id === ticketId,
-      { urgency: nueva as 1 | 2 | 3, arrivalSeq: newSeq },
-      (t) => ({ ...t, urgencia: nueva, arrivalSeq: newSeq })
-    );
+  /** Mira el siguiente (por urgencia asc y arrivalSeq asc) sin extraer */
+  peek(): Ticket | undefined {
+    if (this.items.length === 0) return undefined;
+    let best = this.items[0];
+    for (let i = 1; i < this.items.length; i++) {
+      const cur = this.items[i];
+      if (this.better(cur, best)) best = cur;
+    }
+    return best;
   }
 
-  snapshot(): Array<Pick<TriageTicket, "id" | "patientId" | "urgencia" | "arrivalSeq">> {
-    return this.heap.toArray().map(({ value }) => ({
-      id: value.id,
-      patientId: value.patientId,
-      urgencia: value.urgencia,
-      arrivalSeq: value.arrivalSeq,
-    }));
+  /** Extrae el siguiente según prioridad clínica + FIFO */
+  next(): Ticket | undefined {
+    if (this.items.length === 0) return undefined;
+    // encuentra índice del "mejor"
+    let bestIdx = 0;
+    for (let i = 1; i < this.items.length; i++) {
+      if (this.better(this.items[i], this.items[bestIdx])) bestIdx = i;
+    }
+    const [picked] = this.items.splice(bestIdx, 1);
+    return picked;
   }
 
-  clear(): void {
-    this.heap = new (this.heap.constructor as any)();
-    this.arrivalSeqCounter = 0;
+  /** Reprioriza: mueve el ticket al **final** dentro de su nueva urgencia (respeta FIFO existente) */
+  reprioritize(id: string, newUrgency: number): boolean {
+    const t = this.items.find(x => x.id === id);
+    if (!t) return false;
+
+    // Actualiza la urgencia
+    t.urgencia = newUrgency;
+
+    // Los tests esperan que el repriorizado quede DETRÁS de los que ya tenían esa urgencia.
+    // Colocamos su arrivalSeq justo después del máximo actual en esa urgencia.
+    const sameUrgency = this.items.filter(x => x.id !== id && x.urgencia === newUrgency);
+    if (sameUrgency.length > 0) {
+      const maxSeq = Math.max(...sameUrgency.map(x => x.arrivalSeq));
+      t.arrivalSeq = maxSeq + 1;
+    }
+    // Si no hay nadie con esa urgencia, no tocamos arrivalSeq (sólo resuelve empates dentro de la urgencia).
+
+    return true;
+  }
+
+  /** Snapshot ordenado (sólo lectura) */
+  snapshot(): Ticket[] {
+    return [...this.items].sort((a, b) => {
+      if (a.urgencia !== b.urgencia) return a.urgencia - b.urgencia;
+      return a.arrivalSeq - b.arrivalSeq;
+    });
+  }
+
+  /** Vacía la cola (para tests) */
+  reset() {
+    this.items = [];
+    this.seq = 0;
+  }
+
+  /** Comparador: true si a es mejor (más urgente/FIFO) que b */
+  private better(a: Ticket, b: Ticket): boolean {
+    if (a.urgencia !== b.urgencia) return a.urgencia < b.urgencia;
+    return a.arrivalSeq < b.arrivalSeq;
+    // (menor urgencia = más prioridad; empate -> menor arrivalSeq = más antiguo)
   }
 }

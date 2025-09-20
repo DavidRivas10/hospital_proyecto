@@ -1,4 +1,4 @@
-import { api } from "./client";
+import { client } from "./client";
 
 // UI en español (como tu schema)
 export type TriageCreateInputUI = {
@@ -34,7 +34,7 @@ export async function triageCreate(input: TriageCreateInputUI) {
     signosVitales,
   };
 
-  const res = await api.post("/v1/triage", payload).catch((err) => {
+  const res = await client.post("/v1/triage", payload).catch((err) => {
     console.error("[triageCreate] 400 payload:", payload, " server says:", err?.response?.data);
     throw err;
   });
@@ -45,7 +45,7 @@ export async function triageCreate(input: TriageCreateInputUI) {
 }
 
 export async function getQueue() {
-  const { data } = await api.get("/v1/queue");
+  const { data } = await client.get("/v1/queue");
   return data;
 }
 

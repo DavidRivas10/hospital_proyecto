@@ -1,4 +1,4 @@
-import { api } from "./client";
+import { client } from "./client";
 
 export type Patient = {
   _id?: string;
@@ -24,7 +24,7 @@ function toArray(v: unknown): string[] | undefined {
 }
 
 export async function listPatients(): Promise<Patient[]> {
-  const { data } = await api.get("/v1/patients");
+  const { data } = await client.get("/v1/patients");
   return Array.isArray(data) ? data : data?.items ?? [];
 }
 
@@ -44,7 +44,7 @@ export async function createPatient(input: Patient): Promise<Patient> {
 
   if (!payload.fullName) throw new Error("FULLNAME_REQUIRED");
 
-  const res = await api.post("/v1/patients", payload).catch((err) => {
+  const res = await client.post("/v1/patients", payload).catch((err) => {
     console.log("[createPatient] 400 payload:", payload, " server says:", err?.response?.data);
     throw err;
   });

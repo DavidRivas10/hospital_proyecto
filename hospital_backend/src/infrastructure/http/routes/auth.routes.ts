@@ -1,11 +1,9 @@
 import { Router } from "express";
-import { authController } from "../controllers/auth.controller.js";
-import { validateBody } from "../middlewares/validate.js";
-import { registerSchema, loginSchema, refreshSchema } from "../dto/auth.dto.js";
+import { loginHandler, protectedHandler, registerHandler, refreshHandler, logoutHandler } from "../controllers/auth.controller.js";
 
-export const authRouter = Router();
-
-authRouter.post("/auth/register", validateBody(registerSchema), authController.register);
-authRouter.post("/auth/login", validateBody(loginSchema), authController.login);
-authRouter.post("/auth/refresh", validateBody(refreshSchema), authController.refresh);
-authRouter.post("/auth/logout", validateBody(refreshSchema), authController.logout);
+export const authRoutes = Router();
+authRoutes.post("/login", loginHandler);
+authRoutes.get("/protected-complete", protectedHandler);
+authRoutes.post("/register", registerHandler);
+authRoutes.post("/refresh", refreshHandler);
+authRoutes.post("/logout", logoutHandler);
