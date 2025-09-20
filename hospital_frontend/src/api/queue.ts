@@ -1,4 +1,5 @@
-import { client } from "./client";
+// src/api/queue.ts
+import api, { apiPath } from "./http";
 
 // UI en español (como tu schema)
 export type TriageCreateInputUI = {
@@ -15,15 +16,26 @@ export type TriageCreateInputUI = {
 };
 
 export async function triageCreate(input: TriageCreateInputUI) {
-  // SIN traducir a inglés; el backend espera español
   const signosVitales =
     input.signosVitales && Object.keys(input.signosVitales).length
       ? {
-          FC: input.signosVitales.FC !== "" && input.signosVitales.FC != null ? Number(input.signosVitales.FC) : undefined,
-          FR: input.signosVitales.FR !== "" && input.signosVitales.FR != null ? Number(input.signosVitales.FR) : undefined,
+          FC:
+            input.signosVitales.FC !== "" && input.signosVitales.FC != null
+              ? Number(input.signosVitales.FC)
+              : undefined,
+          FR:
+            input.signosVitales.FR !== "" && input.signosVitales.FR != null
+              ? Number(input.signosVitales.FR)
+              : undefined,
           TA: input.signosVitales.TA || undefined,
-          Temp: input.signosVitales.Temp !== "" && input.signosVitales.Temp != null ? Number(input.signosVitales.Temp) : undefined,
-          SpO2: input.signosVitales.SpO2 !== "" && input.signosVitales.SpO2 != null ? Number(input.signosVitales.SpO2) : undefined,
+          Temp:
+            input.signosVitales.Temp !== "" && input.signosVitales.Temp != null
+              ? Number(input.signosVitales.Temp)
+              : undefined,
+          SpO2:
+            input.signosVitales.SpO2 !== "" && input.signosVitales.SpO2 != null
+              ? Number(input.signosVitales.SpO2)
+              : undefined,
         }
       : undefined;
 
@@ -34,41 +46,43 @@ export async function triageCreate(input: TriageCreateInputUI) {
     signosVitales,
   };
 
-  const res = await client.post("/v1/triage", payload).catch((err) => {
-    console.error("[triageCreate] 400 payload:", payload, " server says:", err?.response?.data);
+  try {
+    const res = await api.post(apiPath("/triage"), payload);
+    // bandera para que Dashboard refresque
+    sessionStorage.setItem("queue:changed", Date.now().toString());
+    return res.data; // { ticket }
+  } catch (err: any) {
+    console.error(
+      "[triageCreate] payload:",
+      payload,
+      " server says:",
+      err?.response?.data
+    );
     throw err;
-  });
-
-  // bandera para que Dashboard refresque
-  sessionStorage.setItem("queue:changed", Date.now().toString());
-  return res.data; // { ticket, ... }
+  }
 }
 
 export async function getQueue() {
-  const { data } = await client.get("/v1/queue");
-  return data;
+  const { data } = await api.get(apiPath("/queue")); // -> /v1/queue
+  return data; // { size, items }
 }
 
-// Normalizador mínimo al shape original que mencionaste
+/**
+ * Métricas mínimas derivadas de GET /v1/queue
+ * Backend devuelve { size, items }. No hay "todayCompleted" ni "avgMinutes" aún,
+ * así que devolvemos 0 y null respectivamente para no romper la UI.
+ */
 export async function getQueueMetrics(): Promise<{
   pendingCount: number;
   todayCompleted: number;
   avgMinutes: number | null;
 }> {
   const data = await getQueue();
+  const pendingCount = Number(data?.size ?? 0) || 0;
 
-  const pendingCount = Array.isArray(data?.pending)
-    ? data.pending.length
-    : Number(data?.pending ?? 0) || 0;
-
-  const todayCompleted = Array.isArray(data?.todayCompleted)
-    ? data.todayCompleted.length
-    : Number(data?.todayCompleted ?? 0) || 0;
-
-  const avgMinutes =
-    typeof data?.avgMinutes === "number" && isFinite(data.avgMinutes)
-      ? data.avgMinutes
-      : null;
-
-  return { pendingCount, todayCompleted, avgMinutes };
+  return {
+    pendingCount,
+    todayCompleted: 0,  // placeholder hasta que exista endpoint real
+    avgMinutes: null,   // placeholder
+  };
 }
