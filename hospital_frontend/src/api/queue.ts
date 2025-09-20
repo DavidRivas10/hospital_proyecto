@@ -88,11 +88,16 @@ export async function triageCreate(input: TriageCreateInputUI) {
   };
 
   const res = await api.post(apiPath("/triage"), payload).catch((err) => {
-    console.error("[triageCreate] payload:", payload, " server says:", err?.response?.data);
+    console.error(
+      "[triageCreate] payload:",
+      payload,
+      " server says:",
+      err?.response?.data
+    );
     throw err;
   });
 
-  // ⬇️ Guarda hora local de creación para poder calcular espera en el Dashboard
+  // Guarda hora local para calcular espera en el Dashboard
   if (res?.data?.ticket?.id) {
     setTicketTime(res.data.ticket.id, Date.now());
   }
@@ -106,7 +111,10 @@ export async function triageCreate(input: TriageCreateInputUI) {
 /** Obtener lista de la cola */
 export async function getQueue(): Promise<{ size: number; items: Ticket[] }> {
   const { data } = await api.get(apiPath("/queue"));
-  return { size: Number(data?.size ?? 0) || 0, items: Array.isArray(data?.items) ? data.items : [] };
+  return {
+    size: Number(data?.size ?? 0) || 0,
+    items: Array.isArray(data?.items) ? data.items : [],
+  };
 }
 
 /** Atender el siguiente ticket: devuelve el ticket o null si no hay */
@@ -119,18 +127,26 @@ export async function nextTicket(): Promise<null | Ticket> {
   return (res.data?.ticket as Ticket) ?? null;
 }
 
-/**
- * Métricas mínimas derivadas de GET /v1/queue (placeholder hasta endpoint real)
- */
+/** NUEVO: marcar ticket como atendido por id (registra métricas) */
+export async function attendTicket(
+  id: string
+): Promise<{ attended: { waitedMs: number } }> {
+  const { data } = await api.post(apiPath(`/queue/${id}/attend`));
+  sessionStorage.setItem("queue:changed", Date.now().toString());
+  return data;
+}
+
+/** Métricas reales del backend */
 export async function getQueueMetrics(): Promise<{
   pendingCount: number;
   todayCompleted: number;
   avgMinutes: number | null;
 }> {
-  const { size } = await getQueue();
+  const { data } = await api.get(apiPath("/queue/metrics"));
   return {
-    pendingCount: size,
-    todayCompleted: 0,
-    avgMinutes: null,
+    pendingCount: Number(data?.pendingCount ?? 0) || 0,
+    todayCompleted: Number(data?.todayCompleted ?? 0) || 0,
+    avgMinutes:
+      typeof data?.avgMinutes === "number" ? data.avgMinutes : null,
   };
 }

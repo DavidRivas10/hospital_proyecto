@@ -7,7 +7,7 @@ export type Ticket = {
   sintomas?: string;
   urgencia: number;      // 1 = más urgente
   arrivalSeq: number;    // FIFO dentro de la misma urgencia
-  enqueuedAt: number;    // timestamp ms para métricas
+  enqueuedAt: number;    // timestamp ms
 };
 
 type EnqueueDTO = {
@@ -25,17 +25,20 @@ export type Attended = {
   waitedMs: number;
 };
 
+export type HistoryEvent =
+  | { type: "created"; at: number; ticket: Ticket }
+  | { type: "attended"; at: number; attended: Attended };
+
 export class QueueService {
   private items: Ticket[] = [];
   private attended: Attended[] = [];
+  private events: HistoryEvent[] = [];
   private seq = 0;
 
-  /** Número de elementos en cola */
   get size() {
     return this.items.length;
   }
 
-  /** Inserta y devuelve el ticket creado */
   enqueue(dto: EnqueueDTO): Ticket {
     const t: Ticket = {
       id: randomUUID(),
@@ -46,10 +49,11 @@ export class QueueService {
       enqueuedAt: Date.now(),
     };
     this.items.push(t);
+    // ⬇️ Log en historial
+    this.events.push({ type: "created", at: t.enqueuedAt, ticket: t });
     return t;
   }
 
-  /** Mira el siguiente (por urgencia asc y arrivalSeq asc) sin extraer */
   peek(): Ticket | undefined {
     if (this.items.length === 0) return undefined;
     let best = this.items[0];
@@ -60,10 +64,8 @@ export class QueueService {
     return best;
   }
 
-  /** Extrae el siguiente según prioridad clínica + FIFO */
   next(): Ticket | undefined {
     if (this.items.length === 0) return undefined;
-    // encuentra índice del "mejor"
     let bestIdx = 0;
     for (let i = 1; i < this.items.length; i++) {
       if (this.better(this.items[i], this.items[bestIdx])) bestIdx = i;
@@ -72,9 +74,8 @@ export class QueueService {
     return picked;
   }
 
-  /** Marca un ticket como atendido (lo saca de la cola por id) y lo registra para métricas */
   attend(id: string): Attended | null {
-    const idx = this.items.findIndex(x => x.id === id);
+    const idx = this.items.findIndex((x) => x.id === id);
     if (idx === -1) return null;
     const [t] = this.items.splice(idx, 1);
     const attendedAt = Date.now();
@@ -88,27 +89,25 @@ export class QueueService {
       waitedMs,
     };
     this.attended.push(record);
+    // ⬇️ Log en historial
+    this.events.push({ type: "attended", at: attendedAt, attended: record });
     return record;
   }
 
-  /** Reprioriza: mueve el ticket al **final** dentro de su nueva urgencia (respeta FIFO existente) */
   reprioritize(id: string, newUrgency: number): boolean {
-    const t = this.items.find(x => x.id === id);
+    const t = this.items.find((x) => x.id === id);
     if (!t) return false;
-
-    // Actualiza la urgencia
     t.urgencia = newUrgency;
-
-    // Los tests esperan que el repriorizado quede DETRÁS de los que ya tenían esa urgencia.
-    const sameUrgency = this.items.filter(x => x.id !== id && x.urgencia === newUrgency);
+    const sameUrgency = this.items.filter(
+      (x) => x.id !== id && x.urgencia === newUrgency
+    );
     if (sameUrgency.length > 0) {
-      const maxSeq = Math.max(...sameUrgency.map(x => x.arrivalSeq));
+      const maxSeq = Math.max(...sameUrgency.map((x) => x.arrivalSeq));
       t.arrivalSeq = maxSeq + 1;
     }
     return true;
   }
 
-  /** Snapshot ordenado (sólo lectura) */
   snapshot(): Ticket[] {
     return [...this.items].sort((a, b) => {
       if (a.urgencia !== b.urgencia) return a.urgencia - b.urgencia;
@@ -116,7 +115,12 @@ export class QueueService {
     });
   }
 
-  /** Métricas de hoy (UTC-agnóstico: usa la fecha local del servidor) */
+  /** Historial (creados + atendidos), más reciente primero */
+  history(limit = 500): HistoryEvent[] {
+    const list = [...this.events].sort((a, b) => b.at - a.at);
+    return list.slice(0, Math.max(1, limit));
+  }
+
   metricsToday() {
     const now = new Date();
     const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
@@ -129,21 +133,16 @@ export class QueueService {
         ? Math.round((today.reduce((sum, a) => sum + a.waitedMs, 0) / todayCompleted) / 60000)
         : null;
 
-    return {
-      pendingCount: this.size,
-      todayCompleted,
-      avgMinutes,
-    };
+    return { pendingCount: this.size, todayCompleted, avgMinutes };
   }
 
-  /** Vacía la cola (para tests) */
   reset() {
     this.items = [];
     this.attended = [];
+    this.events = [];
     this.seq = 0;
   }
 
-  /** Comparador: true si a es mejor (más urgente/FIFO) que b */
   private better(a: Ticket, b: Ticket): boolean {
     if (a.urgencia !== b.urgencia) return a.urgencia < b.urgencia;
     return a.arrivalSeq < b.arrivalSeq;
